@@ -160,12 +160,12 @@ def make_dataloader(src_lines, tgt_lines, tokenizer, max_seq_len, batch_size, sh
             src_item = self.src_data[idx]
             tgt_item = self.tgt_data[idx]
             # Ensure the sequence is of MAX_SEQ_LEN
-            src_item_padded = F.pad(src_item, (0, max_seq_len - len(src_item)), value=tokenizer.vocab["<pad>"])
-            tgt_item_padded = F.pad(tgt_item, (0, max_seq_len - len(tgt_item)), value=tokenizer.vocab["<pad>"])
+            src_item_padded = F.pad(src_item, (0, max_seq_len - len(src_item)), value=tokenizer.pad_id())
+            tgt_item_padded = F.pad(tgt_item, (0, max_seq_len - len(tgt_item)), value=tokenizer.pad_id())
             # Input is the entire sequence
             input = src_item_padded
             # Target is the same sequence shifted by one position and padded
-            target = F.pad(tgt_item_padded[1:], (0, 1), value=tokenizer.vocab["<pad>"])
+            target = F.pad(tgt_item_padded[1:], (0, 1), value=tokenizer.pad_id())
             return input, target
 
     # Create datasets
