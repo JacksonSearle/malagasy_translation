@@ -124,8 +124,12 @@ def create_tokenizer(src_lines, tgt_lines, vocab_size):
     write_subset_to_file(src_lines, tgt_lines, "datasets/train.txt", sample_fraction)
 
     # Create a custom sentencepiece tokenizer from the train subset file
-    spm.SentencePieceTrainer.train(input="datasets/train.txt", model_prefix=os.path.join(tokenizer_path, "tokenizer"), vocab_size=vocab_size)
-
+    spm.SentencePieceTrainer.train(
+        input="datasets/train.txt",
+        model_prefix=os.path.join(tokenizer_path, "tokenizer"),
+        vocab_size=vocab_size,
+        user_defined_symbols=['[BOS]', '[EOS]']
+    )
 
 def make_dataloader(src_lines, tgt_lines, tokenizer, max_seq_len, batch_size, shuffle=False):
     # Function to process each article
@@ -229,6 +233,11 @@ def load_translation_text(max_seq_len, batch_size, vocab_size):
     train_src = src_lines[test_size + valid_size:]
     train_tgt = tgt_lines[test_size + valid_size:]
 
+    # Put '[BOS]' and '[EOS]' tokens in the target sequences
+    train_tgt = ['[BOS] ' + tgt + ' [EOS]' for tgt in train_tgt]
+    valid_tgt = ['[BOS] ' + tgt + ' [EOS]' for tgt in valid_tgt]
+    test_tgt = ['[BOS] ' + tgt + ' [EOS]' for tgt in test_tgt]
+
     # If there isn't a tokenizer.model and tokenizer.vocab in models/tokenizer, create them
     tokenizer_path = "models/tokenizer" + '_' + str(vocab_size)
     tokenizer_model_path = os.path.join(tokenizer_path, "tokenizer.model")
@@ -247,4 +256,4 @@ def load_translation_text(max_seq_len, batch_size, vocab_size):
     return train_loader, valid_loader, test_loader, tokenizer
 
 
-load_translation_text(100, 32, 10000)
+train_loader, valid_loader, test_loader, tokenizer = load_translation_text(100, 32, 10000)
