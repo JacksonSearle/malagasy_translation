@@ -254,6 +254,3 @@ def load_translation_text(max_seq_len, batch_size, vocab_size):
     test_loader = make_dataloader(test_src, test_tgt, tokenizer, max_seq_len, batch_size)
 
     return train_loader, valid_loader, test_loader, tokenizer
-
-
-train_loader, valid_loader, test_loader, tokenizer = load_translation_text(100, 32, 10000)
