@@ -14,271 +14,16 @@ from torchscale.architecture.encoder_decoder import EncoderDecoder
 from torchinfo import summary as model_summary
  
  
-from datasets import load_wikitext2
+from datasets import load_translation_text
  
  
 from tqdm import tqdm
  
  
 from tabulate import tabulate
- 
- 
-class RetNetModel(nn.Module):
-    def __init__(
-            self,
-            embed_dim: int,
-            value_embed_dim: int,
-            retention_heads: int,
-            ffn_dim: int,
-            layers: int,
-            dropout: float,
-            activation_dropout: float,
-            vocab_size: int,
-            checkpoint_activations: bool,
-            fsdp: bool,
-            max_seq_len: int):
-        """ Use parameters to create corresponding RetNet model
-        Args:
-            embed_dim (int): Dimension size of each embedded token.
-            value_embed_dim (int): Value embed dimension size.
-            retention_heads (int): Number of retention heads in MSR module.
-            ffn_dim (int): Hidden layer size of Feed Forward Network (FFN).
-            layers (int): Number of retention network layers.
-            dropout (float): Probability of an element to be zeroed during dropout.
-            activation_dropout (float): Probability of an element to be zeroed
-                during dropout after activation between FFN layers.
-            vocab_size (int): Maximum vocabulary size (number of unique tokens in
-                vocabulary.
-            checkpoint_activations (bool): Whether to perform checkpointing or not
-                (done with the FairScale library).
-            fsdp (bool): Whether to shard Module parameters across data parallel
-                workers or not (with the FairScale library).
-            max_seq_len (int): Size of context window.
-        """
-        super().__init__()
- 
- 
-        self.model_params = {
-                "embed_dim": embed_dim,
-                "value_embed_dim": value_embed_dim,
-                "retention_heads": retention_heads,
-                "ffn_dim": ffn_dim,
-                "layers": layers,
-                "dropout": dropout,
-                "activation_dropout": activation_dropout,
-                "vocab_size": vocab_size,
-                "checkpoint_activations": checkpoint_activations,
-                "fsdp": fsdp,
-                "max_seq_len": max_seq_len
-                }
- 
- 
-        config = RetNetConfig(
-                decoder_embed_dim=embed_dim,
-                decoder_value_embed_dim=value_embed_dim,
-                decoder_retention_heads=retention_heads,
-                decoder_ffn_embed_dim=ffn_dim,
-                decoder_layers=layers,
-                dropout=dropout,
-                activation_dropout=activation_dropout,
-                vocab_size=vocab_size,
-                checkpoint_activations=checkpoint_activations,
-                fsdp=fsdp)
- 
- 
-        # Save max_seq_len for padding later
-        self.max_seq_len = max_seq_len
- 
- 
-        # Save vocab_size for final dimensions later
-        self.vocab_size = vocab_size
- 
- 
-        # Create embeddings with index 0 representing padding
-        self.text_embeddings = nn.Embedding(
-                num_embeddings=vocab_size,
-                embedding_dim=embed_dim,
-                padding_idx=0)
- 
- 
-        #TODO: Check that we are masking correctly
-        self.decoder_stack = RetNetDecoder(config, embed_tokens=self.text_embeddings)
- 
- 
-    def forward(self, x: torch.Tensor, encoder_padding_mask=False) -> torch.Tensor:
-        logits, other_stuff = self.decoder_stack(x, encoder_padding_mask=encoder_padding_mask)
-        return logits
- 
- 
-    def generate_text(self, start_string, generation_length=100, device='cuda'):
-        # Evaluation mode
-        self.decoder_stack.eval()
-        self.decoder_stack.to(device)
- 
- 
-        # Convert start string to numbers
-        input_eval = self.tokenizer.stoi(start_string)
-        print(input_eval)
-        input_eval = torch.tensor(input_eval).unsqueeze(0).to(device)
- 
- 
-        # Empty list to store generated text
-        text_generated = []
- 
- 
-        # No gradients needed
-        with torch.no_grad():
-            for _ in range(generation_length):
-                predictions = self.forward(input_eval)
-                # Apply softmax to predictions
-                predictions = F.softmax(predictions, dim=-1)
-                # Get the last predicted word
-                predicted_id = predictions.argmax(dim=-1)[..., -1]
- 
- 
-                # Add predicted word to the input (to be used as next input sequence)
-                input_eval = torch.cat([input_eval, predicted_id.unsqueeze(-1)], dim=-1)
- 
- 
-                # Convert predicted word id to word
-                predicted_word = self.tokenizer.itos(predicted_id.tolist())
- 
- 
-                text_generated.append(predicted_word)
- 
- 
-        return start_string + ' ' + ' '.join(text_generated)
- 
- 
- 
- 
-class TransformerModel(nn.Module):
-    def __init__(
-            self,
-            embed_dim: int,
-            value_embed_dim: int,
-            attention_heads: int,
-            ffn_dim: int,
-            layers: int,
-            dropout: float,
-            activation_dropout: float,
-            vocab_size: int,
-            checkpoint_activations: bool,
-            fsdp: bool,
-            max_seq_len: int):
-        """ Use parameters to create corresponding RetNet model
-        Args:
-            embed_dim (int): Dimension size of each embedded token.
-            value_embed_dim (int): Value embed dimension size.
-            attention_heads (int): Number of attention heads in MHA module.
-            ffn_dim (int): Hidden layer size of Feed Forward Network (FFN).
-            layers (int): Number of retention network layers.
-            dropout (float): Probability of an element to be zeroed during dropout.
-            activation_dropout (float): Probability of an element to be zeroed
-                during dropout after activation between FFN layers.
-            vocab_size (int): Maximum vocabulary size (number of unique tokens in
-                vocabulary.
-            checkpoint_activations (bool): Whether to perform checkpointing or not
-                (done with the FairScale library).
-            fsdp (bool): Whether to shard Module parameters across data parallel
-                workers or not (with the FairScale library).
-            max_seq_len (int): Size of context window.
-        """
-        super().__init__()
- 
- 
-        self.model_params = {
-                "embed_dim": embed_dim,
-                "value_embed_dim": value_embed_dim,
-                "attention_heads": attention_heads,
-                "ffn_dim": ffn_dim,
-                "layers": layers,
-                "dropout": dropout,
-                "activation_dropout": activation_dropout,
-                "vocab_size": vocab_size,
-                "checkpoint_activations": checkpoint_activations,
-                "fsdp": fsdp,
-                "max_seq_len": max_seq_len
-                }
- 
- 
-        config = DecoderConfig(
-                decoder_embed_dim=embed_dim,
-                decoder_value_embed_dim=value_embed_dim,
-                decoder_attention_heads=attention_heads,
-                decoder_ffn_embed_dim=ffn_dim,
-                decoder_layers=layers,
-                dropout=dropout,
-                activation_dropout=activation_dropout,
-                vocab_size=vocab_size,
-                checkpoint_activations=checkpoint_activations,
-                fsdp=fsdp)
- 
- 
-        # Save max_seq_len for padding later
-        self.max_seq_len = max_seq_len
- 
- 
-        # Save vocab_size for final dimensions later
-        self.vocab_size = vocab_size
- 
- 
-        # Create embeddings with index 0 representing padding
-        self.text_embeddings = nn.Embedding(
-                num_embeddings=vocab_size,
-                embedding_dim=embed_dim,
-                padding_idx=0)
- 
- 
-        self.decoder_stack = Decoder(config, embed_tokens=self.text_embeddings)
- 
- 
-    def forward(self, x: torch.Tensor, encoder_padding_mask=False) -> torch.Tensor:
-        logits, other_stuff = self.decoder_stack(x, encoder_padding_mask=encoder_padding_mask)
-        return logits
-   
-    def generate_text(self, start_string, generation_length=100, device='cuda'):
-        # Evaluation mode
-        self.decoder_stack.eval()
-        self.decoder_stack.to(device)
- 
- 
-        # Convert start string to numbers
-        input_eval = self.tokenizer.stoi(start_string)
-        print(input_eval)
-        input_eval = torch.tensor(input_eval).unsqueeze(0).to(device)
- 
- 
-        # Empty list to store generated text
-        text_generated = []
- 
- 
-        # No gradients needed
-        with torch.no_grad():
-            for _ in range(generation_length):
-                predictions = self.forward(input_eval)
-                # Apply softmax to get probabilities
-                predictions = F.softmax(predictions, dim=-1)
-                # Get the last predicted word
-                predicted_id = predictions.argmax(dim=-1)[..., -1]
- 
- 
-                # Add predicted word to the input (to be used as next input sequence)
-                input_eval = torch.cat([input_eval, predicted_id.unsqueeze(-1)], dim=-1)
- 
- 
-                # Convert predicted word id to word
-                predicted_word = self.tokenizer.itos(predicted_id.tolist())
- 
- 
-                text_generated.append(predicted_word)
- 
- 
-        return start_string + ' ' + ' '.join(text_generated)
-   
- 
 
-class TransformerModel(nn.Module):
+
+class EncoderDecoderModel(nn.Module):
     def __init__(
             self,
             embed_dim: int,
@@ -367,8 +112,8 @@ class TransformerModel(nn.Module):
         self.decoder_stack = EncoderDecoder(config, encoder_embed_tokens=self.text_embeddings, decoder_embed_tokens=self.text_embeddings)
  
  
-    def forward(self, x: torch.Tensor, encoder_padding_mask=False) -> torch.Tensor:
-        logits, other_stuff = self.decoder_stack(x, encoder_padding_mask=encoder_padding_mask)
+    def forward(self, x: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        logits, other_stuff = self.decoder_stack(x, targets)
         return logits
    
     def generate_text(self, start_string, generation_length=100, device='cuda'):
@@ -435,7 +180,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, required=True,
             help="Learning rate of model to train.")
     parser.add_argument("-m", "--model", required=True,
-            choices=["retnet", "transformer", "enc_dec"],
+            choices=["enc_dec"],
             help="Name of model architecture to train.")
     parser.add_argument("-n", "--heads", type=int, default=3,
             help="Number of heads. Head architecture changes based on model.")
@@ -470,34 +215,8 @@ if __name__ == "__main__":
  
  
     # Create requested model
-    if args.model == "retnet":
-        model = RetNetModel(
-                embed_dim=args.embed_dim,
-                value_embed_dim=args.value_embed_dim,
-                retention_heads=args.heads,
-                ffn_dim=args.ffn_dim,
-                layers=args.layers,
-                dropout=args.dropout,
-                activation_dropout=args.activation_dropout,
-                vocab_size=args.vocab_size,
-                checkpoint_activations=args.checkpoint_activations,
-                fsdp=args.fsdp,
-                max_seq_len=args.seq_len)
-    elif args.model == "transformer":
-        model = TransformerModel(
-                embed_dim=args.embed_dim,
-                value_embed_dim=args.value_embed_dim,
-                attention_heads=args.heads,
-                ffn_dim=args.ffn_dim,
-                layers=args.layers,
-                dropout=args.dropout,
-                activation_dropout=args.activation_dropout,
-                vocab_size=args.vocab_size,
-                checkpoint_activations=args.checkpoint_activations,
-                fsdp=args.fsdp,
-                max_seq_len=args.seq_len)
-    elif args.model == "enc_dec":
-        model = EncoderDecoder(
+    if args.model == "enc_dec":
+        model = EncoderDecoderModel(
                 embed_dim=args.embed_dim,
                 value_embed_dim=args.value_embed_dim,
                 attention_heads=args.heads,
@@ -529,8 +248,8 @@ if __name__ == "__main__":
  
  
     # Print model info
-    print('\nModel Summary:')
-    model_summary(model, input_data=torch.ones(1, args.seq_len).long())
+    # print('\nModel Summary:')
+    # model_summary(model, (args.batch_size, args.seq_len), (args.batch_size, args.seq_len))
  
  
     # Print estimated loss if it hasn't learned anything
@@ -539,7 +258,7 @@ if __name__ == "__main__":
  
  
     # Load the dataset
-    train_loader, valid_loader, test_loader, tokenizer = load_wikitext2(max_seq_len=args.seq_len, batch_size=args.batch_size)
+    train_loader, valid_loader, test_loader, tokenizer = load_translation_text(max_seq_len=args.seq_len, batch_size=args.batch_size, vocab_size=args.vocab_size)
     model.tokenizer = tokenizer
  
  
@@ -575,20 +294,11 @@ if __name__ == "__main__":
             optimizer.zero_grad()
        
             # Get model predictions
-            predictions = model(inputs)
-
-            # Get the 30 most likely predicted tokens and their probabilities
-            max_predictions = predictions.topk(k=30, dim=-1)
-            most_likely_tokens = max_predictions.indices
-            probabilities = max_predictions.values
+            predictions = model(inputs, targets[:, :-1])
            
             # Reshape the model outputs to match the expected shape for CrossEntropyLoss
-            B, T, C = predictions.shape
-            predictions = predictions.reshape(B * T, C)
-            B, T = targets.shape
-            targets = targets.reshape(B * T)
-       
-            # Calculate loss
+            predictions = predictions.view(-1, predictions.size(-1))
+            targets = targets[:, 1:].contiguous().view(-1)
             loss = loss_fn(predictions, targets)
        
             # Backpropagate loss
@@ -596,6 +306,10 @@ if __name__ == "__main__":
        
             # Update parameters
             optimizer.step()
+
+            #! Remove this
+            print(loss.item())
+            break
  
             # Run validation 3 times per epoch
             if batch_idx % (len(train_loader) // 3) == 0:
@@ -611,16 +325,12 @@ if __name__ == "__main__":
                         val_targets = val_targets.to(device)
                        
                         # Get validation predictions
-                        val_predictions = model(val_inputs)
-                       
-                        # Reshape the model outputs to match the expected shape for CrossEntropyLoss
-                        B, T, C = val_predictions.shape
-                        val_predictions = val_predictions.reshape(B * T, C)
-                        B, T = val_targets.shape
-                        val_targets = val_targets.reshape(B * T)
+                        val_predictions = model(val_inputs, val_targets[:, :-1])
                        
                         # Calculate validation loss
-                        val_loss = loss_fn(val_predictions, val_targets)
+                        val_predictions = val_predictions.view(-1, val_predictions.size(-1))
+                        val_targets = val_targets[:, 1:].contiguous().view(-1)
+                        val_loss = loss_fn(predictions, targets)
                         total_loss += val_loss.item() * val_inputs.size(0)
                         total_samples += val_inputs.size(0)
                    
@@ -629,10 +339,6 @@ if __name__ == "__main__":
                     print(f"Validation Loss: {avg_val_loss}")
                
                 model.train()
- 
- 
-    # # Save the model as a pickle file
-    # torch.save(model, f"{args.model}.pt")
  
  
     # Test the model
@@ -647,15 +353,11 @@ if __name__ == "__main__":
             targets = targets.to(device)
            
             # Get model predictions
-            predictions = model(inputs)
-           
-            # Reshape the model outputs to match the expected shape for CrossEntropyLoss
-            B, T, C = predictions.shape
-            predictions = predictions.reshape(B * T, C)
-            B, T = targets.shape
-            targets = targets.reshape(B * T)
+            predictions = model(inputs, targets[:, :-1])
            
             # Calculate loss
+            predictions = predictions.view(-1, predictions.size(-1))
+            targets = targets[:, 1:].contiguous().view(-1)
             loss = loss_fn(predictions, targets)
             total_loss += loss.item() * inputs.size(0)
             total_samples += inputs.size(0)

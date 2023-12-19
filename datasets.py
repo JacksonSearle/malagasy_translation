@@ -119,16 +119,20 @@ def create_tokenizer(src_lines, tgt_lines, vocab_size):
 
     # Create a folder to store the tokenizer and the datasets
     tokenizer_path = "models/tokenizer" + '_' + str(vocab_size)
+    if not os.path.exists(tokenizer_path):
+        os.makedirs(tokenizer_path)
 
     # Write out a subset of the train set to datasets/train.txt
     write_subset_to_file(src_lines, tgt_lines, "datasets/train.txt", sample_fraction)
 
     # Create a custom sentencepiece tokenizer from the train subset file
+    num_defined_tokens = 2 # [BOS] and [EOS]
     spm.SentencePieceTrainer.train(
         input="datasets/train.txt",
         model_prefix=os.path.join(tokenizer_path, "tokenizer"),
-        vocab_size=vocab_size,
-        user_defined_symbols=['[BOS]', '[EOS]']
+        vocab_size=vocab_size-num_defined_tokens,
+        user_defined_symbols=['[BOS]', '[EOS]'],
+        pad_id=3
     )
 
 def make_dataloader(src_lines, tgt_lines, tokenizer, max_seq_len, batch_size, shuffle=False):
@@ -207,6 +211,14 @@ def load_translation_text(max_seq_len, batch_size, vocab_size):
     # Create a combined dataset
     src_lines = []
     tgt_lines = []
+
+    # Do pwd to get the current directory
+    current_directory = os.getcwd()
+    print(current_directory)
+
+    # Go up one directory
+    os.chdir("..")
+
     for src_file, tgt_file in zip(src_files, tgt_files):
         with open(src_file, "r") as f:
             src_lines.extend(f.readlines())
@@ -219,8 +231,8 @@ def load_translation_text(max_seq_len, batch_size, vocab_size):
     tgt_lines = [tgt_lines[i] for i in indices]
 
     # Make test, validation and training splits
-    test_split = 0.1
-    valid_split = 0.1
+    test_split = 0.01
+    valid_split = 0.01
     test_size = int(len(src_lines) * test_split)
     valid_size = int(len(src_lines) * valid_split)
     train_size = len(src_lines) - test_size - valid_size
@@ -249,7 +261,8 @@ def load_translation_text(max_seq_len, batch_size, vocab_size):
     tokenizer = spm.SentencePieceProcessor(model_file=os.path.join(tokenizer_path, "tokenizer.model"))
 
     # Make dataloaders
-    train_loader = make_dataloader(train_src, train_tgt, tokenizer, max_seq_len, batch_size, shuffle=True)
+    #!: Fix this
+    train_loader = make_dataloader(train_src, train_tgt, tokenizer, max_seq_len, batch_size, shuffle=False)
     valid_loader = make_dataloader(valid_src, valid_tgt, tokenizer, max_seq_len, batch_size)
     test_loader = make_dataloader(test_src, test_tgt, tokenizer, max_seq_len, batch_size)
 

@@ -6,9 +6,12 @@ python3 ../train_model.py \
     --ffn-dim 16 \
     --fsdp True \
     --layers 2 \
-    --lr 0.01 \
+    --lr 0.001 \
     --model enc_dec \
     --heads 4 \
-    --seq-len 30 \
+    --seq-len 256 \
     --value-embed-dim 16 \
     --vocab-size 1000 \
+    --device cpu \
+    --batch-size 16 \
+    --epochs 10000 \
