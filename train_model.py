@@ -8,6 +8,7 @@ from argparse import ArgumentParser
 from torchscale.architecture.config import DecoderConfig, RetNetConfig, EncoderDecoderConfig
 from torchscale.architecture.decoder import Decoder
 from torchscale.architecture.retnet import RetNetDecoder
+from torchscale.architecture.encoder_decoder import EncoderDecoder
  
  
 from torchinfo import summary as model_summary
@@ -328,10 +329,18 @@ class TransformerModel(nn.Module):
  
  
         config = EncoderDecoderConfig(
+                encoder_embed_dim=embed_dim,
                 decoder_embed_dim=embed_dim,
+
                 decoder_value_embed_dim=value_embed_dim,
+
+                encoder_attention_heads=attention_heads,
                 decoder_attention_heads=attention_heads,
+
+                encoder_ffn_embed_dim=ffn_dim,
                 decoder_ffn_embed_dim=ffn_dim,
+                
+                encoder_layers=layers,
                 decoder_layers=layers,
                 dropout=dropout,
                 activation_dropout=activation_dropout,
@@ -355,7 +364,7 @@ class TransformerModel(nn.Module):
                 padding_idx=0)
  
  
-        self.decoder_stack = Decoder(config, embed_tokens=self.text_embeddings)
+        self.decoder_stack = EncoderDecoder(config, encoder_embed_tokens=self.text_embeddings, decoder_embed_tokens=self.text_embeddings)
  
  
     def forward(self, x: torch.Tensor, encoder_padding_mask=False) -> torch.Tensor:
@@ -426,7 +435,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, required=True,
             help="Learning rate of model to train.")
     parser.add_argument("-m", "--model", required=True,
-            choices=["retnet", "transformer"],
+            choices=["retnet", "transformer", "enc_dec"],
             help="Name of model architecture to train.")
     parser.add_argument("-n", "--heads", type=int, default=3,
             help="Number of heads. Head architecture changes based on model.")
@@ -476,6 +485,19 @@ if __name__ == "__main__":
                 max_seq_len=args.seq_len)
     elif args.model == "transformer":
         model = TransformerModel(
+                embed_dim=args.embed_dim,
+                value_embed_dim=args.value_embed_dim,
+                attention_heads=args.heads,
+                ffn_dim=args.ffn_dim,
+                layers=args.layers,
+                dropout=args.dropout,
+                activation_dropout=args.activation_dropout,
+                vocab_size=args.vocab_size,
+                checkpoint_activations=args.checkpoint_activations,
+                fsdp=args.fsdp,
+                max_seq_len=args.seq_len)
+    elif args.model == "enc_dec":
+        model = EncoderDecoder(
                 embed_dim=args.embed_dim,
                 value_embed_dim=args.value_embed_dim,
                 attention_heads=args.heads,
@@ -543,21 +565,17 @@ if __name__ == "__main__":
         print(f'Epoch {epoch + 1}')
         for batch_idx, (inputs, targets) in enumerate(tqdm(train_loader, mininterval=60)): # Prints progress bar every mininterval seconds
             
- 
-            # Make a sample padding mask where there are 0's for padding and 1's for real tokens
-            encoder_padding_mask = torch.ones(inputs.shape, dtype=torch.bool)
-            encoder_padding_mask[inputs == 1] = False
+            # Train an encoder-decoder model
  
             # Put inputs and targets on device
             inputs = inputs.to(device)
             targets = targets.to(device)
-            encoder_padding_mask = encoder_padding_mask.to(device)
        
             # Zero out gradients
             optimizer.zero_grad()
        
             # Get model predictions
-            predictions = model(inputs, encoder_padding_mask=encoder_padding_mask)
+            predictions = model(inputs)
 
             # Get the 30 most likely predicted tokens and their probabilities
             max_predictions = predictions.topk(k=30, dim=-1)
