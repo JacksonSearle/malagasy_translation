@@ -8,3 +8,4 @@ __pycache__/
 datasets/
 models/
 *.pt
+*.out
