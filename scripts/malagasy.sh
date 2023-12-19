@@ -2,13 +2,13 @@ python3 ../train_model.py \
     --activation-dropout 0.1 \
     --checkpoint-activations False \
     --dropout 0.1 \
-    --embed-dim 10 \
-    --ffn-dim 10 \
+    --embed-dim 16 \
+    --ffn-dim 16 \
     --fsdp True \
     --layers 2 \
-    --lr 0.0001 \
+    --lr 0.01 \
     --model enc_dec \
     --heads 4 \
     --seq-len 30 \
-    --value-embed-dim 10 \
+    --value-embed-dim 16 \
     --vocab-size 1000 \
