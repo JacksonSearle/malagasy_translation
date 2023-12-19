@@ -165,7 +165,7 @@ def make_dataloader(src_lines, tgt_lines, tokenizer, max_seq_len, batch_size, sh
             tgt_item = self.tgt_data[idx]
             # Ensure the sequence is of MAX_SEQ_LEN
             src_item_padded = F.pad(src_item, (0, max_seq_len - len(src_item)), value=tokenizer.pad_id())
-            tgt_item_padded = F.pad(tgt_item, (0, max_seq_len - len(tgt_item)), value=tokenizer.pad_id())
+            tgt_item_padded = F.pad(tgt_item, (0, max_seq_len - len(tgt_item) + 1), value=tokenizer.pad_id()) # Add 1 so we can index targets two different ways
             # Input is the entire sequence
             input = src_item_padded
             # Target is the same sequence shifted by one position and padded
@@ -254,3 +254,8 @@ def load_translation_text(max_seq_len, batch_size, vocab_size):
     test_loader = make_dataloader(test_src, test_tgt, tokenizer, max_seq_len, batch_size)
 
     return train_loader, valid_loader, test_loader, tokenizer
+
+# train_loader, valid_loader, test_loader, tokenizer = load_translation_text(128, 32, 10000)
+
+# for batch in train_loader:
+#     print(batch)
