@@ -109,51 +109,48 @@ class EncoderDecoderModel(nn.Module):
                 padding_idx=0)
  
  
-        self.decoder_stack = EncoderDecoder(config, encoder_embed_tokens=self.text_embeddings, decoder_embed_tokens=self.text_embeddings)
+        self.model = EncoderDecoder(config, encoder_embed_tokens=self.text_embeddings, decoder_embed_tokens=self.text_embeddings)
  
  
     def forward(self, x: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        logits, other_stuff = self.decoder_stack(x, targets)
+        logits, other_stuff = self.model(x, targets)
         return logits
    
-    def generate_text(self, start_string, generation_length=100, device='cuda'):
+    def generate_text(self, src, device='cuda'):
+        # Start of translated text
+        tgt_string = "[BOS]"
+
         # Evaluation mode
-        self.decoder_stack.eval()
-        self.decoder_stack.to(device)
- 
+        self.model.eval()
+        self.model.to(device)
+
+        # Convert source string to numbers
+        src = self.tokenizer.encode(src)
+        src = torch.tensor(src).unsqueeze(0).to(device)
  
         # Convert start string to numbers
-        input_eval = self.tokenizer.stoi(start_string)
-        print(input_eval)
-        input_eval = torch.tensor(input_eval).unsqueeze(0).to(device)
- 
- 
-        # Empty list to store generated text
-        text_generated = []
- 
+        tgt = self.tokenizer.encode(tgt_string)
+        tgt = torch.tensor(tgt).unsqueeze(0).to(device)
  
         # No gradients needed
         with torch.no_grad():
-            for _ in range(generation_length):
-                predictions = self.forward(input_eval)
+            for i in range(self.max_seq_len):
+                predictions = self.forward(src, tgt)
                 # Apply softmax to get probabilities
                 predictions = F.softmax(predictions, dim=-1)
+
                 # Get the last predicted word
                 predicted_id = predictions.argmax(dim=-1)[..., -1]
+
+                # Stop if predicted word is the end token
+                if predicted_id == self.tokenizer.encode("[EOS]"):
+                    break
+ 
+                # Add predicted word to the target (to be used as next input sequence)
+                tgt = torch.cat([tgt, predicted_id.unsqueeze(-1)], dim=-1)
  
  
-                # Add predicted word to the input (to be used as next input sequence)
-                input_eval = torch.cat([input_eval, predicted_id.unsqueeze(-1)], dim=-1)
- 
- 
-                # Convert predicted word id to word
-                predicted_word = self.tokenizer.itos(predicted_id.tolist())
- 
- 
-                text_generated.append(predicted_word)
- 
- 
-        return start_string + ' ' + ' '.join(text_generated)
+        return self.tokenizer.decode(tgt.squeeze().tolist())
  
 if __name__ == "__main__":
     # Initialize, setup, and parse the argument parser
@@ -341,39 +338,35 @@ if __name__ == "__main__":
                 model.train()
  
  
-    # Test the model
-    print('\nTesting model...')
-    model.eval()
-    total_loss = 0
-    total_samples = 0
-    with torch.no_grad():
-        for inputs, targets in tqdm(test_loader, mininterval=60): # Prints progress bar every mininterval seconds
-            # Put inputs and targets on device
-            inputs = inputs.to(device)
-            targets = targets.to(device)
+    # # Test the model
+    # print('\nTesting model...')
+    # model.eval()
+    # total_loss = 0
+    # total_samples = 0
+    # with torch.no_grad():
+    #     for inputs, targets in tqdm(test_loader, mininterval=60): # Prints progress bar every mininterval seconds
+    #         # Put inputs and targets on device
+    #         inputs = inputs.to(device)
+    #         targets = targets.to(device)
            
-            # Get model predictions
-            predictions = model(inputs, targets[:, :-1])
+    #         # Get model predictions
+    #         predictions = model(inputs, targets[:, :-1])
            
-            # Calculate loss
-            predictions = predictions.view(-1, predictions.size(-1))
-            targets = targets[:, 1:].contiguous().view(-1)
-            loss = loss_fn(predictions, targets)
-            total_loss += loss.item() * inputs.size(0)
-            total_samples += inputs.size(0)
+    #         # Calculate loss
+    #         predictions = predictions.view(-1, predictions.size(-1))
+    #         targets = targets[:, 1:].contiguous().view(-1)
+    #         loss = loss_fn(predictions, targets)
+    #         total_loss += loss.item() * inputs.size(0)
+    #         total_samples += inputs.size(0)
    
-    # Calculate average loss
-    avg_loss = total_loss / total_samples
-    print(f"Test Loss: {avg_loss}")
+    # # Calculate average loss
+    # avg_loss = total_loss / total_samples
+    # print(f"Test Loss: {avg_loss}")
  
  
     # Generate text from the model
     print('\nGenerating text...')
-    print(model.generate_text(start_string="<pad>", generation_length=100, device=device))
-    print(model.generate_text(start_string="= valkyria", generation_length=100, device=device))
-    print(model.generate_text(start_string="= = reception =", generation_length=100, device=device))
-    print(model.generate_text(start_string="the item was intended", generation_length=100, device=device))
- 
- 
-    # Say where the model was saved
-    print(f"\nModel saved to {args.model}.pt")
+    print(model.generate_text(src="Hi, my name is Anthony!", device=device))
+    print(model.generate_text(src="What is your name?", device=device))
+    print(model.generate_text(src="What is your favorite color?", device=device))
+    print(model.generate_text(src="The brothers' business was a success and they became more active in civic affairs, both in Philadelphia and the wider field of the colony of Pennsylvania.", device=device))
