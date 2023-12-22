@@ -21,6 +21,7 @@ from tqdm import tqdm
  
  
 from tabulate import tabulate
+import os
 
 
 class EncoderDecoderModel(nn.Module):
@@ -37,28 +38,11 @@ class EncoderDecoderModel(nn.Module):
             checkpoint_activations: bool,
             fsdp: bool,
             max_seq_len: int):
-        """ Use parameters to create corresponding RetNet model
-        Args:
-            embed_dim (int): Dimension size of each embedded token.
-            value_embed_dim (int): Value embed dimension size.
-            attention_heads (int): Number of attention heads in MHA module.
-            ffn_dim (int): Hidden layer size of Feed Forward Network (FFN).
-            layers (int): Number of retention network layers.
-            dropout (float): Probability of an element to be zeroed during dropout.
-            activation_dropout (float): Probability of an element to be zeroed
-                during dropout after activation between FFN layers.
-            vocab_size (int): Maximum vocabulary size (number of unique tokens in
-                vocabulary.
-            checkpoint_activations (bool): Whether to perform checkpointing or not
-                (done with the FairScale library).
-            fsdp (bool): Whether to shard Module parameters across data parallel
-                workers or not (with the FairScale library).
-            max_seq_len (int): Size of context window.
-        """
         super().__init__()
  
+        tokenizer_path = "models/tokenizer" + '_' + str(vocab_size)
  
-        self.model_params = {
+        self.params = {
                 "embed_dim": embed_dim,
                 "value_embed_dim": value_embed_dim,
                 "attention_heads": attention_heads,
@@ -69,7 +53,8 @@ class EncoderDecoderModel(nn.Module):
                 "vocab_size": vocab_size,
                 "checkpoint_activations": checkpoint_activations,
                 "fsdp": fsdp,
-                "max_seq_len": max_seq_len
+                "max_seq_len": max_seq_len,
+                "tokenizer_path": tokenizer_path
                 }
  
  
@@ -193,6 +178,8 @@ if __name__ == "__main__":
             help="Device to use (GPU).")
     parser.add_argument("--epochs", type=int, default=10,
             help="Number of epochs to train for.")
+    parser.add_argument("--name", type=str, default="test",
+            help="Name of the test run.")
  
  
     args = parser.parse_args()
@@ -225,8 +212,6 @@ if __name__ == "__main__":
                 checkpoint_activations=args.checkpoint_activations,
                 fsdp=args.fsdp,
                 max_seq_len=args.seq_len)
-   
- 
  
     # Print all arguments for recordkeeping
     print('Arguments:')
@@ -303,10 +288,6 @@ if __name__ == "__main__":
        
             # Update parameters
             optimizer.step()
-
-            #! Remove this
-            print(loss.item())
-            break
  
             # Run validation 3 times per epoch
             if batch_idx % (len(train_loader) // 3) == 0:
@@ -338,30 +319,30 @@ if __name__ == "__main__":
                 model.train()
  
  
-    # # Test the model
-    # print('\nTesting model...')
-    # model.eval()
-    # total_loss = 0
-    # total_samples = 0
-    # with torch.no_grad():
-    #     for inputs, targets in tqdm(test_loader, mininterval=60): # Prints progress bar every mininterval seconds
-    #         # Put inputs and targets on device
-    #         inputs = inputs.to(device)
-    #         targets = targets.to(device)
+    # Test the model
+    print('\nTesting model...')
+    model.eval()
+    total_loss = 0
+    total_samples = 0
+    with torch.no_grad():
+        for inputs, targets in tqdm(test_loader, mininterval=60): # Prints progress bar every mininterval seconds
+            # Put inputs and targets on device
+            inputs = inputs.to(device)
+            targets = targets.to(device)
            
-    #         # Get model predictions
-    #         predictions = model(inputs, targets[:, :-1])
+            # Get model predictions
+            predictions = model(inputs, targets[:, :-1])
            
-    #         # Calculate loss
-    #         predictions = predictions.view(-1, predictions.size(-1))
-    #         targets = targets[:, 1:].contiguous().view(-1)
-    #         loss = loss_fn(predictions, targets)
-    #         total_loss += loss.item() * inputs.size(0)
-    #         total_samples += inputs.size(0)
+            # Calculate loss
+            predictions = predictions.view(-1, predictions.size(-1))
+            targets = targets[:, 1:].contiguous().view(-1)
+            loss = loss_fn(predictions, targets)
+            total_loss += loss.item() * inputs.size(0)
+            total_samples += inputs.size(0)
    
-    # # Calculate average loss
-    # avg_loss = total_loss / total_samples
-    # print(f"Test Loss: {avg_loss}")
+    # Calculate average loss
+    avg_loss = total_loss / total_samples
+    print(f"Test Loss: {avg_loss}")
  
  
     # Generate text from the model
@@ -370,3 +351,15 @@ if __name__ == "__main__":
     print(model.generate_text(src="What is your name?", device=device))
     print(model.generate_text(src="What is your favorite color?", device=device))
     print(model.generate_text(src="The brothers' business was a success and they became more active in civic affairs, both in Philadelphia and the wider field of the colony of Pennsylvania.", device=device))
+
+    # Create directory for model if it doesn't exist
+    if not os.path.exists(os.path.join("models", args.name)):
+        os.makedirs(os.path.join("models", args.name))
+
+    # Save the model
+    print('\nSaving model...')
+    torch.save(model.state_dict(), os.path.join("models", args.name, "model.pt"))
+
+    # Pickle the model's parameters
+    print('\nSaving model parameters...')
+    torch.save(model.params, os.path.join("models", args.name, "params.pkl"))
